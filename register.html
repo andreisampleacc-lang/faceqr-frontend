@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>Register</title>
-<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: 'Segoe UI', Arial; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -77,27 +77,25 @@ const MODEL_URL = "https://faceqr-frontend.onrender.com/models";
 let capturedFace = "";
 let modelsLoaded = false;
 
-async function loadModels() {
-    try {
-        showMsg("Loading face models...", "info");
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-        modelsLoaded = true;
-        document.getElementById("faceStatusText").textContent = "Face not captured yet";
-        document.getElementById("captureBtn").disabled = false;
-        document.getElementById("msgBox").innerHTML = "";
-        console.log("✅ Models loaded from CDN");
-    } catch(e) {
-        showMsg("Failed to load face models. Check internet connection.", "error");
-        console.log("Models error:", e);
-    }
-}
-
 navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
 .then(stream => document.getElementById("video").srcObject = stream)
 .catch(() => showMsg("Camera blocked. Allow camera permission.", "error"));
 
+async function loadModels() {
+    try {
+        document.getElementById("faceStatusText").textContent = "Loading face models...";
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        modelsLoaded = true;
+        document.getElementById("faceStatusText").textContent = "✅ Models ready — capture your face!";
+        document.getElementById("faceDot").style.background = "#38bdf8";
+        document.getElementById("captureBtn").disabled = false;
+    } catch(e) {
+        document.getElementById("faceStatusText").textContent = "❌ Error: " + e.message;
+        document.getElementById("msgBox").innerHTML = `<div class="msg error">Failed to load models: ${e.message}</div>`;
+    }
+}
 loadModels();
 
 function showMsg(text, type) {
@@ -108,10 +106,8 @@ function showMsg(text, type) {
 async function captureFace() {
     if (!modelsLoaded) { showMsg("Face models not loaded yet.", "error"); return; }
     showMsg("🔍 Detecting face...", "info");
-
     const video = document.getElementById("video");
     const descriptors = [];
-
     for (let i = 0; i < 3; i++) {
         await new Promise(r => setTimeout(r, 300));
         const det = await faceapi
@@ -120,16 +116,10 @@ async function captureFace() {
             .withFaceDescriptor();
         if (det) descriptors.push(det.descriptor);
     }
-
-    if (descriptors.length === 0) {
-        showMsg("No face detected! Look at camera and try again.", "error"); return;
-    }
-
-    const avgDescriptor = descriptors[0].map((_, i) =>
-        descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length
-    );
-
-    capturedFace = JSON.stringify(Array.from(avgDescriptor));
+    if (descriptors.length === 0) { showMsg("No face detected! Look at camera.", "error"); return; }
+    const avg = descriptors[0].map((_, i) =>
+        descriptors.reduce((s, d) => s + d[i], 0) / descriptors.length);
+    capturedFace = JSON.stringify(Array.from(avg));
     document.getElementById("faceDot").classList.add("captured");
     document.getElementById("faceStatusText").textContent = "✅ Face captured!";
     showMsg("Face captured! ✅", "success");
@@ -139,11 +129,9 @@ function register() {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value.trim();
     const confirm  = document.getElementById("confirm").value.trim();
-
     if (!username || !password) { showMsg("Fill in all fields", "error"); return; }
     if (password !== confirm)   { showMsg("Passwords do not match", "error"); return; }
     if (!capturedFace)          { showMsg("Please capture your face first", "error"); return; }
-
     fetch(`${API}/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -2,7 +2,7 @@
 <html>
 <head>
     <title>Secure Login</title>
-   <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js" crossorigin="anonymous"></script>
+    <script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -108,8 +108,11 @@ async function loadModels() {
         modelsLoaded = true;
         const btn = document.getElementById("faceBtn");
         if (btn) { btn.disabled = false; btn.textContent = "📷 Scan My Face"; }
-        console.log("✅ Models loaded from CDN");
-    } catch(e) { console.log("Models error:", e); }
+    } catch(e) {
+        const btn = document.getElementById("faceBtn");
+        if (btn) { btn.disabled = false; btn.textContent = "📷 Scan My Face"; btn.style.background = "#dc2626"; }
+        console.log("Models error:", e.message);
+    }
 }
 loadModels();
 
@@ -129,12 +132,10 @@ function goToStep(step) {
     }
 }
 
-// STEP 1
 function loginPassword() {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value.trim();
     if (!username || !password) { showMsg("msg1", "Enter username and password", "error"); return; }
-
     fetch(`${API}/api/auth/login/password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -156,15 +157,11 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
-// STEP 2 — QR
 async function startQRScanner() {
-    try {
-        availableCameras = await Html5Qrcode.getCameras();
-    } catch(e) {
-        showMsg("msg2", "Camera not accessible. Use manual input below.", "error"); return;
-    }
+    try { availableCameras = await Html5Qrcode.getCameras(); }
+    catch(e) { showMsg("msg2", "Camera not accessible. Use manual input.", "error"); return; }
     if (!availableCameras || availableCameras.length === 0) {
-        showMsg("msg2", "No camera found. Use manual input below.", "error"); return;
+        showMsg("msg2", "No camera found. Use manual input.", "error"); return;
     }
     currentCameraIndex = availableCameras.length > 1 ? 1 : 0;
     html5QrCode = new Html5Qrcode("qr-reader");
@@ -172,20 +169,15 @@ async function startQRScanner() {
 }
 
 function launchCamera(cameraId) {
-    html5QrCode.start(
-        cameraId,
+    html5QrCode.start(cameraId,
         { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
-        (decodedText) => {
-            html5QrCode.stop().then(() => processQR(decodedText)).catch(console.log);
-        },
+        (decoded) => { html5QrCode.stop().then(() => processQR(decoded)).catch(console.log); },
         () => {}
     ).catch(err => showMsg("msg2", "Camera error: " + err, "error"));
 }
 
 function switchCamera() {
-    if (!availableCameras || availableCameras.length < 2) {
-        showMsg("msg2", "Only one camera available", "info"); return;
-    }
+    if (!availableCameras || availableCameras.length < 2) { showMsg("msg2", "Only one camera available", "info"); return; }
     html5QrCode.stop().then(() => {
         currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
         launchCamera(availableCameras[currentCameraIndex].id);
@@ -220,62 +212,5 @@ function processQR(qrValue) {
     .catch(() => showMsg("msg2", "Cannot connect to server", "error"));
 }
 
-// STEP 3 — FACE
 function startFaceCamera() {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
-    .then(stream => document.getElementById("video").srcObject = stream)
-    .catch(() => showMsg("msg3", "Camera blocked. Allow camera permission.", "error"));
-}
-
-async function scanFace() {
-    if (!modelsLoaded) { showMsg("msg3", "Face models not loaded yet. Wait a moment.", "error"); return; }
-    const btn = document.getElementById("faceBtn");
-    btn.disabled = true;
-    btn.textContent = "Scanning...";
-    showMsg("msg3", "🔍 Detecting face — hold still...", "info");
-
-    const video = document.getElementById("video");
-    const descriptors = [];
-
-    for (let i = 0; i < 3; i++) {
-        await new Promise(r => setTimeout(r, 300));
-        const det = await faceapi
-            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks()
-            .withFaceDescriptor();
-        if (det) descriptors.push(det.descriptor);
-    }
-
-    if (descriptors.length === 0) {
-        showMsg("msg3", "No face detected. Look at camera and try again.", "error");
-        btn.disabled = false; btn.textContent = "📷 Scan My Face"; return;
-    }
-
-    const avgDescriptor = descriptors[0].map((_, i) =>
-        descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length
-    );
-
-    if (!storedFaceData || storedFaceData === "") { grantAccess(); return; }
-
-    try {
-        const storedDescriptor = JSON.parse(storedFaceData);
-        const distance = faceapi.euclideanDistance(avgDescriptor, storedDescriptor);
-        console.log("Face distance:", distance);
-        if (distance < 0.45) {
-            grantAccess();
-        } else {
-            showMsg("msg3", `❌ Face not matched (score: ${distance.toFixed(2)}). Try again.`, "error");
-            btn.disabled = false; btn.textContent = "📷 Scan My Face";
-        }
-    } catch { grantAccess(); }
-}
-
-function grantAccess() {
-    const video = document.getElementById("video");
-    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
-    goToStep("Done");
-    document.getElementById("welcomeName").textContent = `Welcome, ${currentUser}!`;
-}
-</script>
-</body>
-</html>
