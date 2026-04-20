@@ -25,7 +25,6 @@
         button.primary:hover { background: #7dd3fc; }
         button.primary:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
         button.secondary { width: 100%; padding: 10px; background: transparent; color: #94a3b8; border: 1px solid #334155; border-radius: 8px; font-size: 13px; cursor: pointer; margin-top: 8px; }
-        button.secondary:hover { background: #1e293b; }
         video { width: 100%; border-radius: 8px; background: #0f172a; margin-bottom: 12px; }
         .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; text-align: center; }
         .success { background: #064e3b; color: #34d399; }
@@ -37,7 +36,6 @@
         .success-name { text-align: center; font-size: 22px; font-weight: bold; color: #34d399; margin-bottom: 8px; }
         .success-sub { text-align: center; color: #64748b; font-size: 14px; }
         #qr-reader { width: 100%; border-radius: 10px; overflow: hidden; background: #0f172a; margin-bottom: 10px; }
-        #qr-reader video { margin-bottom: 0; }
         .divider-text { text-align: center; color: #475569; font-size: 12px; margin: 10px 0; }
     </style>
 </head>
@@ -80,7 +78,7 @@
         <p class="step-title">Step 3 — Face Scan</p>
         <video id="video" autoplay playsinline></video>
         <div id="msg3"></div>
-        <button class="primary" id="faceBtn" onclick="scanFace()">📷 Scan My Face</button>
+        <button class="primary" id="faceBtn" onclick="scanFace()" disabled>Loading models...</button>
     </div>
 
     <!-- SUCCESS -->
@@ -93,6 +91,8 @@
 
 <script>
 const API = "https://faceqr-backend-production.up.railway.app";
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model";
+
 let currentUser = "";
 let storedFaceData = "";
 let modelsLoaded = false;
@@ -102,11 +102,14 @@ let availableCameras = [];
 
 async function loadModels() {
     try {
-        await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
-        await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
-        await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
+        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
         modelsLoaded = true;
-    } catch(e) { console.log("Models not loaded:", e); }
+        const btn = document.getElementById("faceBtn");
+        if (btn) { btn.disabled = false; btn.textContent = "📷 Scan My Face"; }
+        console.log("✅ Models loaded from CDN");
+    } catch(e) { console.log("Models error:", e); }
 }
 loadModels();
 
@@ -158,12 +161,10 @@ async function startQRScanner() {
     try {
         availableCameras = await Html5Qrcode.getCameras();
     } catch(e) {
-        showMsg("msg2", "Camera not accessible. Use manual input below.", "error");
-        return;
+        showMsg("msg2", "Camera not accessible. Use manual input below.", "error"); return;
     }
     if (!availableCameras || availableCameras.length === 0) {
-        showMsg("msg2", "No camera found. Use manual input below.", "error");
-        return;
+        showMsg("msg2", "No camera found. Use manual input below.", "error"); return;
     }
     currentCameraIndex = availableCameras.length > 1 ? 1 : 0;
     html5QrCode = new Html5Qrcode("qr-reader");
@@ -227,7 +228,7 @@ function startFaceCamera() {
 }
 
 async function scanFace() {
-    if (!modelsLoaded) { showMsg("msg3", "Face models not loaded. Check /models folder.", "error"); return; }
+    if (!modelsLoaded) { showMsg("msg3", "Face models not loaded yet. Wait a moment.", "error"); return; }
     const btn = document.getElementById("faceBtn");
     btn.disabled = true;
     btn.textContent = "Scanning...";
@@ -247,18 +248,14 @@ async function scanFace() {
 
     if (descriptors.length === 0) {
         showMsg("msg3", "No face detected. Look at camera and try again.", "error");
-        btn.disabled = false;
-        btn.textContent = "📷 Scan My Face";
-        return;
+        btn.disabled = false; btn.textContent = "📷 Scan My Face"; return;
     }
 
     const avgDescriptor = descriptors[0].map((_, i) =>
         descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length
     );
 
-    if (!storedFaceData || storedFaceData === "") {
-        grantAccess(); return;
-    }
+    if (!storedFaceData || storedFaceData === "") { grantAccess(); return; }
 
     try {
         const storedDescriptor = JSON.parse(storedFaceData);
@@ -268,8 +265,7 @@ async function scanFace() {
             grantAccess();
         } else {
             showMsg("msg3", `❌ Face not matched (score: ${distance.toFixed(2)}). Try again.`, "error");
-            btn.disabled = false;
-            btn.textContent = "📷 Scan My Face";
+            btn.disabled = false; btn.textContent = "📷 Scan My Face";
         }
     } catch { grantAccess(); }
 }
