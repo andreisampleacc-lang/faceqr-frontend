@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Secure Login</title>
-    <script src="https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -100,42 +99,12 @@ let html5QrCode = null;
 let currentCameraIndex = 0;
 let availableCameras = [];
 
-async function loadModels() {
-    try {
-        await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-        modelsLoaded = true;
-        const btn = document.getElementById("faceBtn");
-        if (btn) { btn.disabled = false; btn.textContent = "📷 Scan My Face"; }
-    } catch(e) {
-        const btn = document.getElementById("faceBtn");
-        if (btn) { btn.disabled = false; btn.textContent = "📷 Scan My Face"; btn.style.background = "#dc2626"; }
-        console.log("Models error:", e.message);
-    }
-}
-loadModels();
-
-function showMsg(id, text, type) {
-    document.getElementById(id).innerHTML = `<div class="msg ${type}">${text}</div>`;
-}
-
-function goToStep(step) {
-    document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
-    document.getElementById("step" + step).classList.add("active");
-    for (let i = 1; i <= 3; i++) {
-        const dot = document.getElementById("dot" + i);
-        if (!dot) continue;
-        dot.className = "dot";
-        if (i < step) dot.classList.add("done");
-        else if (i == step) dot.classList.add("active");
-    }
-}
-
+// ─── STEP 1 — PASSWORD ───────────────────────────────────
 function loginPassword() {
     const username = document.getElementById("username").value.trim();
     const password = document.getElementById("password").value.trim();
     if (!username || !password) { showMsg("msg1", "Enter username and password", "error"); return; }
+
     fetch(`${API}/api/auth/login/password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -157,6 +126,23 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 });
 
+function showMsg(id, text, type) {
+    document.getElementById(id).innerHTML = `<div class="msg ${type}">${text}</div>`;
+}
+
+function goToStep(step) {
+    document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
+    document.getElementById("step" + step).classList.add("active");
+    for (let i = 1; i <= 3; i++) {
+        const dot = document.getElementById("dot" + i);
+        if (!dot) continue;
+        dot.className = "dot";
+        if (i < step) dot.classList.add("done");
+        else if (i == step) dot.classList.add("active");
+    }
+}
+
+// ─── STEP 2 — QR ─────────────────────────────────────────
 async function startQRScanner() {
     try { availableCameras = await Html5Qrcode.getCameras(); }
     catch(e) { showMsg("msg2", "Camera not accessible. Use manual input.", "error"); return; }
@@ -212,5 +198,85 @@ function processQR(qrValue) {
     .catch(() => showMsg("msg2", "Cannot connect to server", "error"));
 }
 
+// ─── STEP 3 — FACE ───────────────────────────────────────
 function startFaceCamera() {
     navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+    .then(stream => {
+        document.getElementById("video").srcObject = stream;
+        loadFaceApi();
+    })
+    .catch(() => showMsg("msg3", "Camera blocked. Allow camera permission.", "error"));
+}
+
+function loadFaceApi() {
+    showMsg("msg3", "⏳ Loading face recognition...", "info");
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/face-api.js@0.22.2/dist/face-api.min.js';
+    script.onload = async () => {
+        try {
+            await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+            await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+            modelsLoaded = true;
+            const btn = document.getElementById("faceBtn");
+            btn.disabled = false;
+            btn.textContent = "📷 Scan My Face";
+            showMsg("msg3", "✅ Ready! Click Scan My Face.", "success");
+        } catch(e) {
+            showMsg("msg3", "Failed to load models: " + e.message, "error");
+        }
+    };
+    script.onerror = () => showMsg("msg3", "Failed to load face-api library.", "error");
+    document.head.appendChild(script);
+}
+
+async function scanFace() {
+    if (!modelsLoaded) { showMsg("msg3", "Face models not loaded yet.", "error"); return; }
+    const btn = document.getElementById("faceBtn");
+    btn.disabled = true;
+    btn.textContent = "Scanning...";
+    showMsg("msg3", "🔍 Detecting face — hold still...", "info");
+
+    const video = document.getElementById("video");
+    const descriptors = [];
+    for (let i = 0; i < 3; i++) {
+        await new Promise(r => setTimeout(r, 300));
+        const det = await faceapi
+            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+        if (det) descriptors.push(det.descriptor);
+    }
+
+    if (descriptors.length === 0) {
+        showMsg("msg3", "No face detected. Look at camera and try again.", "error");
+        btn.disabled = false; btn.textContent = "📷 Scan My Face"; return;
+    }
+
+    const avg = descriptors[0].map((_, i) =>
+        descriptors.reduce((s, d) => s + d[i], 0) / descriptors.length);
+
+    if (!storedFaceData || storedFaceData === "") { grantAccess(); return; }
+
+    try {
+        const stored = JSON.parse(storedFaceData);
+        const distance = faceapi.euclideanDistance(avg, stored);
+        console.log("Distance:", distance);
+        if (distance < 0.45) {
+            grantAccess();
+        } else {
+            showMsg("msg3", `❌ Face not matched (${distance.toFixed(2)}). Try again.`, "error");
+            btn.disabled = false; btn.textContent = "📷 Scan My Face";
+        }
+    } catch { grantAccess(); }
+}
+
+function grantAccess() {
+    const video = document.getElementById("video");
+    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    goToStep("Done");
+    document.getElementById("welcomeName").textContent = `Welcome, ${currentUser}!`;
+}
+</script>
+</body>
+</html>
