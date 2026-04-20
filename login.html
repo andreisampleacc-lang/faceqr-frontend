@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure Login</title>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+    <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .card { background: #1e293b; border-radius: 16px; padding: 35px; width: 100%; max-width: 420px; border: 1px solid #334155; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        .logo { text-align: center; font-size: 40px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #38bdf8; margin-bottom: 5px; font-size: 22px; }
+        .subtitle { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 25px; }
+        .steps-indicator { display: flex; justify-content: center; gap: 8px; margin-bottom: 25px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #334155; transition: 0.3s; }
+        .dot.active { background: #38bdf8; transform: scale(1.3); }
+        .dot.done { background: #34d399; }
+        .step { display: none; }
+        .step.active { display: block; }
+        .step-title { font-size: 14px; color: #94a3b8; margin-bottom: 15px; text-align: center; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        input { width: 100%; padding: 12px 15px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 14px; margin-bottom: 12px; outline: none; transition: 0.2s; }
+        input:focus { border-color: #38bdf8; }
+        input::placeholder { color: #475569; }
+        button.primary { width: 100%; padding: 13px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-top: 5px; }
+        button.primary:hover { background: #7dd3fc; }
+        button.primary:disabled { background: #334155; color: #64748b; cursor: not-allowed; }
+        button.secondary { width: 100%; padding: 10px; background: transparent; color: #94a3b8; border: 1px solid #334155; border-radius: 8px; font-size: 13px; cursor: pointer; margin-top: 8px; }
+        button.secondary:hover { background: #1e293b; }
+        video { width: 100%; border-radius: 8px; background: #0f172a; margin-bottom: 12px; }
+        .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; text-align: center; }
+        .success { background: #064e3b; color: #34d399; }
+        .error   { background: #450a0a; color: #f87171; }
+        .info    { background: #0c2a4a; color: #38bdf8; }
+        .link { text-align: center; margin-top: 15px; font-size: 13px; color: #64748b; }
+        .link a { color: #38bdf8; text-decoration: none; }
+        .success-icon { text-align: center; font-size: 60px; margin-bottom: 15px; }
+        .success-name { text-align: center; font-size: 22px; font-weight: bold; color: #34d399; margin-bottom: 8px; }
+        .success-sub { text-align: center; color: #64748b; font-size: 14px; }
+        #qr-reader { width: 100%; border-radius: 10px; overflow: hidden; background: #0f172a; margin-bottom: 10px; }
+        #qr-reader video { margin-bottom: 0; }
+        .divider-text { text-align: center; color: #475569; font-size: 12px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="logo">🔐</div>
+    <h2>Secure Login</h2>
+    <p class="subtitle">3-Factor Authentication</p>
+
+    <div class="steps-indicator">
+        <div class="dot active" id="dot1"></div>
+        <div class="dot" id="dot2"></div>
+        <div class="dot" id="dot3"></div>
+    </div>
+
+    <!-- STEP 1 -->
+    <div id="step1" class="step active">
+        <p class="step-title">Step 1 — Password</p>
+        <input id="username" placeholder="Username" autocomplete="off">
+        <input id="password" placeholder="Password" type="password">
+        <div id="msg1"></div>
+        <button class="primary" onclick="loginPassword()">Continue →</button>
+        <div class="link"><a href="register.html">No account? Register here</a></div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div id="step2" class="step">
+        <p class="step-title">Step 2 — QR Code</p>
+        <div class="msg info">📷 I-point ang camera sa iyong QR code</div>
+        <div id="qr-reader"></div>
+        <div id="msg2"></div>
+        <button class="secondary" onclick="switchCamera()">🔄 Switch Camera</button>
+        <div class="divider-text">— or type manually —</div>
+        <input id="qrManual" placeholder="Paste QR code here">
+        <button class="primary" onclick="submitManualQR()" style="background:#1e40af;">Submit Manual QR</button>
+    </div>
+
+    <!-- STEP 3 -->
+    <div id="step3" class="step">
+        <p class="step-title">Step 3 — Face Scan</p>
+        <video id="video" autoplay playsinline></video>
+        <div id="msg3"></div>
+        <button class="primary" id="faceBtn" onclick="scanFace()">📷 Scan My Face</button>
+    </div>
+
+    <!-- SUCCESS -->
+    <div id="stepDone" class="step">
+        <div class="success-icon">✅</div>
+        <div class="success-name" id="welcomeName"></div>
+        <div class="success-sub">Access Granted. Welcome back!</div>
+    </div>
+</div>
+
+<script>
+const API = "http://localhost:5015"; // ← change when deploying
+
+let currentUser = "";
+let storedFaceData = "";
+let modelsLoaded = false;
+let html5QrCode = null;
+let currentCameraIndex = 0;
+let availableCameras = [];
+
+async function loadModels() {
+    try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
+        modelsLoaded = true;
+    } catch(e) { console.log("Models not loaded:", e); }
+}
+loadModels();
+
+function showMsg(id, text, type) {
+    document.getElementById(id).innerHTML = `<div class="msg ${type}">${text}</div>`;
+}
+
+function goToStep(step) {
+    document.querySelectorAll(".step").forEach(s => s.classList.remove("active"));
+    document.getElementById("step" + step).classList.add("active");
+    for (let i = 1; i <= 3; i++) {
+        const dot = document.getElementById("dot" + i);
+        if (!dot) continue;
+        dot.className = "dot";
+        if (i < step) dot.classList.add("done");
+        else if (i == step) dot.classList.add("active");
+    }
+}
+
+// STEP 1
+function loginPassword() {
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
+    if (!username || !password) { showMsg("msg1", "Enter username and password", "error"); return; }
+
+    fetch(`${API}/api/auth/login/password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) { showMsg("msg1", data.error, "error"); return; }
+        currentUser = data.username;
+        showMsg("msg1", "✅ Password verified!", "success");
+        setTimeout(() => { goToStep(2); startQRScanner(); }, 800);
+    })
+    .catch(() => showMsg("msg1", "Cannot connect to server", "error"));
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("password").addEventListener("keyup", e => {
+        if (e.key === "Enter") loginPassword();
+    });
+});
+
+// STEP 2 — QR
+async function startQRScanner() {
+    try {
+        availableCameras = await Html5Qrcode.getCameras();
+    } catch(e) {
+        showMsg("msg2", "Camera not accessible. Use manual input below.", "error");
+        return;
+    }
+    if (!availableCameras || availableCameras.length === 0) {
+        showMsg("msg2", "No camera found. Use manual input below.", "error");
+        return;
+    }
+    currentCameraIndex = availableCameras.length > 1 ? 1 : 0;
+    html5QrCode = new Html5Qrcode("qr-reader");
+    launchCamera(availableCameras[currentCameraIndex].id);
+}
+
+function launchCamera(cameraId) {
+    html5QrCode.start(
+        cameraId,
+        { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1.0 },
+        (decodedText) => {
+            html5QrCode.stop().then(() => processQR(decodedText)).catch(console.log);
+        },
+        () => {}
+    ).catch(err => showMsg("msg2", "Camera error: " + err, "error"));
+}
+
+function switchCamera() {
+    if (!availableCameras || availableCameras.length < 2) {
+        showMsg("msg2", "Only one camera available", "info"); return;
+    }
+    html5QrCode.stop().then(() => {
+        currentCameraIndex = (currentCameraIndex + 1) % availableCameras.length;
+        launchCamera(availableCameras[currentCameraIndex].id);
+    });
+}
+
+function submitManualQR() {
+    const qr = document.getElementById("qrManual").value.trim();
+    if (!qr) { showMsg("msg2", "Enter QR code", "error"); return; }
+    if (html5QrCode) html5QrCode.stop().catch(() => {});
+    processQR(qr);
+}
+
+function processQR(qrValue) {
+    showMsg("msg2", "🔍 Verifying QR...", "info");
+    fetch(`${API}/api/auth/login/qr`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(qrValue)
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) {
+            showMsg("msg2", data.error + " — Try scanning again.", "error");
+            setTimeout(() => launchCamera(availableCameras[currentCameraIndex]?.id), 1500);
+            return;
+        }
+        storedFaceData = data.faceData;
+        showMsg("msg2", "✅ QR verified!", "success");
+        setTimeout(() => { goToStep(3); startFaceCamera(); }, 800);
+    })
+    .catch(() => showMsg("msg2", "Cannot connect to server", "error"));
+}
+
+// STEP 3 — FACE
+function startFaceCamera() {
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+    .then(stream => document.getElementById("video").srcObject = stream)
+    .catch(() => showMsg("msg3", "Camera blocked. Allow camera permission.", "error"));
+}
+
+async function scanFace() {
+    if (!modelsLoaded) { showMsg("msg3", "Face models not loaded. Check /models folder.", "error"); return; }
+    const btn = document.getElementById("faceBtn");
+    btn.disabled = true;
+    btn.textContent = "Scanning...";
+    showMsg("msg3", "🔍 Detecting face — hold still...", "info");
+
+    const video = document.getElementById("video");
+    const descriptors = [];
+
+    for (let i = 0; i < 3; i++) {
+        await new Promise(r => setTimeout(r, 300));
+        const det = await faceapi
+            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+        if (det) descriptors.push(det.descriptor);
+    }
+
+    if (descriptors.length === 0) {
+        showMsg("msg3", "No face detected. Look at camera and try again.", "error");
+        btn.disabled = false;
+        btn.textContent = "📷 Scan My Face";
+        return;
+    }
+
+    const avgDescriptor = descriptors[0].map((_, i) =>
+        descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length
+    );
+
+    if (!storedFaceData || storedFaceData === "") {
+        grantAccess(); return;
+    }
+
+    try {
+        const storedDescriptor = JSON.parse(storedFaceData);
+        const distance = faceapi.euclideanDistance(avgDescriptor, storedDescriptor);
+        console.log("Face distance:", distance);
+        if (distance < 0.45) {
+            grantAccess();
+        } else {
+            showMsg("msg3", `❌ Face not matched (score: ${distance.toFixed(2)}). Try again.`, "error");
+            btn.disabled = false;
+            btn.textContent = "📷 Scan My Face";
+        }
+    } catch { grantAccess(); }
+}
+
+function grantAccess() {
+    const video = document.getElementById("video");
+    if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+    goToStep("Done");
+    document.getElementById("welcomeName").textContent = `Welcome, ${currentUser}!`;
+}
+</script>
+</body>
+</html>

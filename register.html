@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Register</title>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial; background: #0f172a; color: #e2e8f0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+        .card { background: #1e293b; border-radius: 16px; padding: 35px; width: 100%; max-width: 420px; border: 1px solid #334155; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+        .logo { text-align: center; font-size: 40px; margin-bottom: 10px; }
+        h2 { text-align: center; color: #34d399; margin-bottom: 5px; }
+        .subtitle { text-align: center; color: #64748b; font-size: 13px; margin-bottom: 25px; }
+        input { width: 100%; padding: 12px 15px; background: #0f172a; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 14px; margin-bottom: 12px; outline: none; transition: 0.2s; }
+        input:focus { border-color: #34d399; }
+        input::placeholder { color: #475569; }
+        button.primary { width: 100%; padding: 13px; background: #34d399; color: #0f172a; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; margin-top: 5px; }
+        button.primary:hover { background: #6ee7b7; }
+        button.secondary { width: 100%; padding: 11px; background: transparent; color: #34d399; border: 1px solid #34d399; border-radius: 8px; font-size: 14px; font-weight: bold; cursor: pointer; margin-bottom: 12px; }
+        button.secondary:hover { background: #064e3b; }
+        video { width: 100%; border-radius: 8px; background: #0f172a; margin-bottom: 10px; }
+        .msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; text-align: center; }
+        .success { background: #064e3b; color: #34d399; }
+        .error   { background: #450a0a; color: #f87171; }
+        .info    { background: #0c2a4a; color: #38bdf8; }
+        .divider { text-align: center; color: #475569; font-size: 12px; margin: 15px 0; }
+        .link { text-align: center; margin-top: 15px; font-size: 13px; color: #64748b; }
+        .link a { color: #34d399; text-decoration: none; }
+        .face-status { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: #0f172a; border-radius: 8px; margin-bottom: 12px; font-size: 13px; border: 1px solid #334155; }
+        .face-dot { width: 10px; height: 10px; border-radius: 50%; background: #f87171; flex-shrink: 0; transition: 0.3s; }
+        .face-dot.captured { background: #34d399; }
+        .qr-box { text-align: center; padding: 20px; background: #0f172a; border-radius: 10px; border: 1px solid #334155; margin-top: 15px; }
+        .qr-box img { width: 180px; border-radius: 8px; margin-bottom: 10px; }
+        .qr-value { font-size: 11px; color: #64748b; word-break: break-all; margin-bottom: 12px; }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="logo">📝</div>
+    <h2>Create Account</h2>
+    <p class="subtitle">Fill in details and capture your face</p>
+
+    <input id="username" placeholder="Username" autocomplete="off">
+    <input id="password" placeholder="Password" type="password">
+    <input id="confirm"  placeholder="Confirm Password" type="password">
+
+    <div class="divider">── Face Capture ──</div>
+
+    <video id="video" autoplay playsinline></video>
+
+    <div class="face-status">
+        <div class="face-dot" id="faceDot"></div>
+        <span id="faceStatusText">Face not captured yet</span>
+    </div>
+
+    <button class="secondary" onclick="captureFace()">📸 Capture Face</button>
+
+    <div id="msgBox"></div>
+
+    <button class="primary" onclick="register()">✅ Register</button>
+
+    <div class="link"><a href="login.html">Already have an account? Login</a></div>
+
+    <div class="qr-box" id="qrSection" style="display:none;">
+        <p style="color:#34d399; font-weight:bold; margin-bottom:8px;">🎉 Registration Successful!</p>
+        <p style="font-size:12px; color:#64748b; margin-bottom:15px;">Save your QR Code — you need it to login</p>
+        <img id="qrDisplay" alt="QR Code">
+        <div class="qr-value" id="qrValue"></div>
+        <button class="primary" onclick="window.print()" style="background:#7c3aed; margin-bottom:8px;">🖨️ Print QR</button>
+        <a href="login.html"><button class="primary">Go to Login →</button></a>
+    </div>
+</div>
+
+<script>
+const API = "http://localhost:5015"; // ← change when deploying
+
+let capturedFace = "";
+let modelsLoaded = false;
+
+async function loadModels() {
+    try {
+        await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
+        await faceapi.nets.faceLandmark68Net.loadFromUri('./models');
+        await faceapi.nets.faceRecognitionNet.loadFromUri('./models');
+        modelsLoaded = true;
+    } catch(e) { console.log("Models not loaded:", e); }
+}
+loadModels();
+
+navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } })
+.then(stream => document.getElementById("video").srcObject = stream)
+.catch(() => showMsg("Camera blocked. Allow camera permission.", "error"));
+
+function showMsg(text, type) {
+    document.getElementById("msgBox").innerHTML = `<div class="msg ${type}">${text}</div>`;
+    setTimeout(() => document.getElementById("msgBox").innerHTML = "", 4000);
+}
+
+async function captureFace() {
+    if (!modelsLoaded) { showMsg("Face models not loaded. Check /models folder.", "error"); return; }
+    showMsg("🔍 Detecting face...", "info");
+
+    const video = document.getElementById("video");
+
+    // Take 3 samples, average for accuracy
+    const descriptors = [];
+    for (let i = 0; i < 3; i++) {
+        await new Promise(r => setTimeout(r, 300));
+        const det = await faceapi
+            .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks()
+            .withFaceDescriptor();
+        if (det) descriptors.push(det.descriptor);
+    }
+
+    if (descriptors.length === 0) {
+        showMsg("No face detected! Look at camera and try again.", "error"); return;
+    }
+
+    const avgDescriptor = descriptors[0].map((_, i) =>
+        descriptors.reduce((sum, d) => sum + d[i], 0) / descriptors.length
+    );
+
+    capturedFace = JSON.stringify(Array.from(avgDescriptor));
+    document.getElementById("faceDot").classList.add("captured");
+    document.getElementById("faceStatusText").textContent = "✅ Face captured successfully!";
+    showMsg("Face captured! ✅", "success");
+}
+
+function register() {
+    const username = document.getElementById("username").value.trim();
+    const password = document.getElementById("password").value.trim();
+    const confirm  = document.getElementById("confirm").value.trim();
+
+    if (!username || !password) { showMsg("Fill in all fields", "error"); return; }
+    if (password !== confirm)   { showMsg("Passwords do not match", "error"); return; }
+    if (!capturedFace)          { showMsg("Please capture your face first", "error"); return; }
+
+    fetch(`${API}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password, faceData: capturedFace })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.error) { showMsg(data.error, "error"); return; }
+        showMsg("Registered! Waiting for admin approval.", "success");
+        document.getElementById("qrSection").style.display = "block";
+        document.getElementById("qrDisplay").src = "data:image/png;base64," + data.qrImage;
+        document.getElementById("qrValue").textContent = "QR Code: " + data.qrCode;
+    })
+    .catch(() => showMsg("Cannot connect to server", "error"));
+}
+</script>
+</body>
+</html>

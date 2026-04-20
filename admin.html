@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Panel</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+        .header { background: #1e293b; padding: 20px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
+        .header h2 { color: #38bdf8; font-size: 22px; }
+        .header span { color: #94a3b8; font-size: 13px; }
+        .container { max-width: 950px; margin: 30px auto; padding: 0 20px; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 25px; }
+        .stat-card { background: #1e293b; border-radius: 10px; padding: 20px; text-align: center; border: 1px solid #334155; }
+        .stat-card .num { font-size: 32px; font-weight: bold; color: #38bdf8; }
+        .stat-card .label { font-size: 12px; color: #94a3b8; margin-top: 5px; }
+        .controls { display: flex; gap: 10px; margin-bottom: 15px; }
+        .search { flex: 1; padding: 10px 15px; background: #1e293b; border: 1px solid #334155; border-radius: 8px; color: #e2e8f0; font-size: 14px; }
+        .search::placeholder { color: #64748b; }
+        .btn-refresh { padding: 10px 20px; background: #38bdf8; color: #0f172a; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 10px; overflow: hidden; border: 1px solid #334155; }
+        th { background: #0f172a; color: #94a3b8; padding: 12px 15px; text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        td { padding: 14px 15px; border-bottom: 1px solid #0f172a; font-size: 14px; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #263348; }
+        .badge-yes { background: #064e3b; color: #34d399; padding: 4px 10px; border-radius: 20px; font-size: 12px; }
+        .badge-no  { background: #450a0a; color: #f87171; padding: 4px 10px; border-radius: 20px; font-size: 12px; }
+        .btn { padding: 6px 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: bold; margin: 2px; }
+        .approve { background: #064e3b; color: #34d399; border: 1px solid #34d399; }
+        .approve:hover { background: #34d399; color: #064e3b; }
+        .delete { background: #450a0a; color: #f87171; border: 1px solid #f87171; }
+        .delete:hover { background: #f87171; color: #450a0a; }
+        .qr-short { font-size: 11px; color: #64748b; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+        .toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: bold; display: none; z-index: 999; }
+        .toast.success { background: #064e3b; color: #34d399; border: 1px solid #34d399; }
+        .toast.error   { background: #450a0a; color: #f87171; border: 1px solid #f87171; }
+        .empty { text-align: center; padding: 40px; color: #64748b; }
+        .face-badge { font-size: 11px; padding: 3px 8px; border-radius: 20px; }
+        .face-yes { background: #0c2a4a; color: #38bdf8; }
+        .face-no  { background: #1e293b; color: #64748b; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h2>🛡️ Admin Panel</h2>
+    <span id="lastUpdate">Loading...</span>
+</div>
+
+<div class="container">
+    <div class="stats">
+        <div class="stat-card">
+            <div class="num" id="totalCount">0</div>
+            <div class="label">Total Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="num" id="approvedCount" style="color:#34d399;">0</div>
+            <div class="label">Approved</div>
+        </div>
+        <div class="stat-card">
+            <div class="num" id="pendingCount" style="color:#f87171;">0</div>
+            <div class="label">Pending Approval</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <input class="search" id="searchBox" placeholder="🔍 Search username..." oninput="filterUsers()">
+        <button class="btn-refresh" onclick="loadUsers()">🔄 Refresh</button>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Username</th>
+                <th>QR Code</th>
+                <th>Face</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="userTable">
+            <tr><td colspan="6" class="empty">Loading users...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const API = "http://localhost:5015"; // ← change when deploying
+
+let allUsers = [];
+
+function showToast(msg, type) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.className = `toast ${type}`;
+    t.style.display = "block";
+    setTimeout(() => t.style.display = "none", 3000);
+}
+
+function loadUsers() {
+    fetch(`${API}/api/auth/users`)
+    .then(res => res.json())
+    .then(users => {
+        allUsers = users;
+        document.getElementById("totalCount").textContent    = users.length;
+        document.getElementById("approvedCount").textContent = users.filter(u => u.approved).length;
+        document.getElementById("pendingCount").textContent  = users.filter(u => !u.approved).length;
+        document.getElementById("lastUpdate").textContent    = "Updated: " + new Date().toLocaleTimeString();
+        renderTable(users);
+    })
+    .catch(() => showToast("Cannot connect to backend ❌", "error"));
+}
+
+function filterUsers() {
+    const q = document.getElementById("searchBox").value.toLowerCase();
+    renderTable(allUsers.filter(u => u.username.toLowerCase().includes(q)));
+}
+
+function renderTable(users) {
+    const tbody = document.getElementById("userTable");
+    if (users.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty">No users found</td></tr>`;
+        return;
+    }
+    tbody.innerHTML = users.map(u => `
+        <tr>
+            <td>#${u.id}</td>
+            <td><strong>${u.username}</strong></td>
+            <td><span class="qr-short" title="${u.qrCode}">${u.qrCode}</span></td>
+            <td>${u.hasFace
+                ? '<span class="face-badge face-yes">✅ Enrolled</span>'
+                : '<span class="face-badge face-no">— None</span>'}</td>
+            <td>${u.approved
+                ? '<span class="badge-yes">✅ Approved</span>'
+                : '<span class="badge-no">⏳ Pending</span>'}</td>
+            <td>
+                ${!u.approved ? `<button class="btn approve" onclick="approve('${u.username}')">✅ Approve</button>` : ""}
+                <button class="btn delete" onclick="deleteUser('${u.username}')">🗑️ Delete</button>
+            </td>
+        </tr>
+    `).join("");
+}
+
+function approve(username) {
+    fetch(`${API}/api/auth/approve/${username}`, { method: "POST" })
+    .then(() => { showToast(`${username} approved! ✅`, "success"); loadUsers(); })
+    .catch(() => showToast("Error approving user", "error"));
+}
+
+function deleteUser(username) {
+    if (!confirm(`Delete "${username}"? This cannot be undone.`)) return;
+    fetch(`${API}/api/auth/delete/${username}`, { method: "DELETE" })
+    .then(() => { showToast(`${username} deleted`, "success"); loadUsers(); })
+    .catch(() => showToast("Error deleting user", "error"));
+}
+
+loadUsers();
+setInterval(loadUsers, 30000);
+</script>
+</body>
+</html>
